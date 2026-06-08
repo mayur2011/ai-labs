@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSE Test UI</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 600px;
+            width: 100%;
+            padding: 30px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            padding: 12px;
+            border-radius: 8px;
+            background: #f8f9fa;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ccc;
+            transition: background 0.3s;
+        }
+
+        .status-indicator.connected {
+            background: #10b981;
+            box-shadow: 0 0 10px #10b981;
+        }
+
+        .status-indicator.disconnected {
+            background: #ef4444;
+        }
+
+        .status-text {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            flex: 1;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-start {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-start:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+        }
+
+        .btn-stop {
+            background: #ef4444;
+            color: white;
+        }
+
+        .btn-stop:hover {
+            background: #dc2626;
+            transform: translateY(-2px);
+        }
+
+        .btn-stop:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-start:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .output {
+            background: #1e1e1e;
+            border-radius: 8px;
+            padding: 20px;
+            min-height: 200px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+
+        .token {
+            color: #10b981;
+            margin: 8px 0;
+            padding: 8px 12px;
+            background: rgba(16, 185, 129, 0.1);
+            border-radius: 4px;
+            border-left: 3px solid #10b981;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .error {
+            color: #ef4444;
+            margin: 8px 0;
+            padding: 8px 12px;
+            background: rgba(239, 68, 68, 0.1);
+            border-radius: 4px;
+            border-left: 3px solid #ef4444;
+        }
+
+        .info {
+            color: #3b82f6;
+            margin: 8px 0;
+            padding: 8px 12px;
+            background: rgba(59, 130, 246, 0.1);
+            border-radius: 4px;
+            border-left: 3px solid #3b82f6;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .stats {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 15px;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            font-size: 13px;
+            color: #666;
+        }
+
+        .stats span {
+            font-weight: 600;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 SSE Test UI</h1>
+        
+        <div class="status">
+            <div class="status-indicator" id="statusIndicator"></div>
+            <span class="status-text" id="statusText">Disconnected</span>
+        </div>
+
+        <div class="controls">
+            <button class="btn-start" id="startBtn" onclick="startConnection()">Start Connection</button>
+            <button class="btn-stop" id="stopBtn" onclick="stopConnection()" disabled>Stop Connection</button>
+        </div>
+
+        <div class="output" id="output">
+            <div class="info">Click "Start Connection" to begin receiving SSE events...</div>
+        </div>
+
+        <div class="stats">
+            <div>Tokens Received: <span id="tokenCount">0</span></div>
+            <div>Connection Time: <span id="connectionTime">0s</span></div>
+        </div>
+    </div>
+
+    <script>
+        let eventSource = null;
+        let tokenCount = 0;
+        let connectionStartTime = null;
+        let connectionTimer = null;
+
+        function updateStatus(status) {
+            const indicator = document.getElementById('statusIndicator');
+            const text = document.getElementById('statusText');
+            
+            indicator.className = 'status-indicator';
+            
+            if (status === 'connected') {
+                indicator.classList.add('connected');
+                text.textContent = 'Connected to http://localhost:8001/stream-events';
+            } else if (status === 'disconnected') {
+                indicator.classList.add('disconnected');
+                text.textContent = 'Disconnected';
+            } else {
+                text.textContent = status;
+            }
+        }
+
+        function addMessage(message, type = 'token') {
+            const output = document.getElementById('output');
+            const div = document.createElement('div');
+            div.className = type;
+            div.textContent = message;
+            output.appendChild(div);
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function startConnection() {
+            if (eventSource) {
+                addMessage('Connection already active', 'info');
+                return;
+            }
+
+            tokenCount = 0;
+            document.getElementById('tokenCount').textContent = '0';
+            document.getElementById('output').innerHTML = '';
+            addMessage('Connecting to SSE stream...', 'info');
+
+            eventSource = new EventSource("http://localhost:8001/stream-events");
+
+            eventSource.onopen = function() {
+                updateStatus('connected');
+                document.getElementById('startBtn').disabled = true;
+                document.getElementById('stopBtn').disabled = false;
+                addMessage('✅ Connection established!', 'info');
+                
+                connectionStartTime = Date.now();
+                connectionTimer = setInterval(updateConnectionTime, 1000);
+            };
+
+            eventSource.onmessage = function(event) {
+                tokenCount++;
+                document.getElementById('tokenCount').textContent = tokenCount;
+                addMessage(`📦 Token ${tokenCount}: ${event.data}`, 'token');
+            };
+
+            eventSource.onerror = function(error) {
+                updateStatus('disconnected');
+                addMessage('❌ Connection error or closed', 'error');
+                stopConnection();
+            };
+        }
+
+        function stopConnection() {
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+            }
+            
+            if (connectionTimer) {
+                clearInterval(connectionTimer);
+                connectionTimer = null;
+            }
+
+            updateStatus('disconnected');
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+            addMessage('🔌 Connection closed', 'info');
+        }
+
+        function updateConnectionTime() {
+            if (connectionStartTime) {
+                const seconds = Math.floor((Date.now() - connectionStartTime) / 1000);
+                document.getElementById('connectionTime').textContent = `${seconds}s`;
+            }
+        }
+
+        // Auto-close connection when page is closed
+        window.addEventListener('beforeunload', function() {
+            if (eventSource) {
+                eventSource.close();
+            }
+        });
+    </script>
+</body>
+</html>
